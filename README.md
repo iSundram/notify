@@ -216,12 +216,9 @@ Releases are fully automated via [GoReleaser](https://goreleaser.com/) and GitHu
    ```
 3. GitHub Actions will automatically:
    - Read the version from `VERSION`
-   - Validate semver format
    - Create a `v0.2.0` git tag
    - Build binaries for all supported platforms
    - Publish a GitHub Release with archives and checksums
-
-If `v<version>` already exists, the workflow fails and asks you to bump `VERSION`.
 
 ### What Gets Built
 

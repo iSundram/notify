@@ -16,6 +16,7 @@ REPO="iSundram/notify"
 PREFIX="/usr/local/bin"
 VERSION=""
 HAS_NOTIFYD=0
+RAW_BASE=""
 
 normalize_version() {
   v="$1"
@@ -26,6 +27,22 @@ normalize_version() {
 
 is_valid_version() {
   printf "%s" "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'
+}
+
+prepare_support_file() {
+  relpath="$1"
+  target="${TMPDIR}/${relpath}"
+  if [ -f "$target" ]; then
+    printf "%s" "$target"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  if curl -fsSL "${RAW_BASE}/${relpath}" -o "$target"; then
+    printf "%s" "$target"
+    return 0
+  fi
+  return 1
 }
 
 usage() {
@@ -83,6 +100,7 @@ if [ -z "$VERSION" ] || ! is_valid_version "$VERSION"; then
   echo "Error: invalid version '$VERSION' (expected semver like 1.2.3)"
   exit 1
 fi
+RAW_BASE="https://raw.githubusercontent.com/${REPO}/v${VERSION}"
 
 echo "Installing notify v${VERSION} (${OS}/${ARCH})..."
 
@@ -123,7 +141,7 @@ fi
 
 # Install optional files if running as root.
 if [ "$(id -u)" = "0" ]; then
-  if [ "$HAS_NOTIFYD" = "1" ] && [ -f "${TMPDIR}/systemd/notifyd.service" ]; then
+  if [ "$HAS_NOTIFYD" = "1" ]; then
     if ! getent group notify >/dev/null 2>&1; then
       if command -v groupadd >/dev/null 2>&1; then
         groupadd --system notify >/dev/null 2>&1 || {
@@ -146,20 +164,33 @@ if [ "$(id -u)" = "0" ]; then
         exit 1
       fi
     fi
+
+    SERVICE_FILE=$(prepare_support_file "systemd/notifyd.service") || {
+      echo "Error: could not fetch systemd/notifyd.service from archive or ${RAW_BASE}"
+      exit 1
+    }
     mkdir -p /etc/systemd/system
-    sed "s|/usr/local/bin/notifyd|${PREFIX}/notifyd|g" "${TMPDIR}/systemd/notifyd.service" > /etc/systemd/system/notifyd.service
+    sed "s|/usr/local/bin/notifyd|${PREFIX}/notifyd|g" "$SERVICE_FILE" > /etc/systemd/system/notifyd.service
     echo "  Installed /etc/systemd/system/notifyd.service"
+
+    if [ ! -f /etc/notify/config.yaml ]; then
+      CONFIG_FILE=$(prepare_support_file "configs/notify.yaml") || {
+        echo "Error: could not fetch configs/notify.yaml from archive or ${RAW_BASE}"
+        exit 1
+      }
+      mkdir -p /etc/notify
+      cp "$CONFIG_FILE" /etc/notify/config.yaml
+      echo "  Installed /etc/notify/config.yaml"
+    fi
   fi
-  if [ -f "${TMPDIR}/scripts/notify.sh" ]; then
-    mkdir -p /etc/profile.d
-    cp "${TMPDIR}/scripts/notify.sh" /etc/profile.d/notify.sh
-    echo "  Installed /etc/profile.d/notify.sh"
-  fi
-  if [ "$HAS_NOTIFYD" = "1" ] && [ -f "${TMPDIR}/configs/notify.yaml" ] && [ ! -f /etc/notify/config.yaml ]; then
-    mkdir -p /etc/notify
-    cp "${TMPDIR}/configs/notify.yaml" /etc/notify/config.yaml
-    echo "  Installed /etc/notify/config.yaml"
-  fi
+
+  PROFILE_SCRIPT=$(prepare_support_file "scripts/notify.sh") || {
+    echo "Error: could not fetch scripts/notify.sh from archive or ${RAW_BASE}"
+    exit 1
+  }
+  mkdir -p /etc/profile.d
+  cp "$PROFILE_SCRIPT" /etc/profile.d/notify.sh
+  echo "  Installed /etc/profile.d/notify.sh"
 fi
 
 echo ""

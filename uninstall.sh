@@ -50,18 +50,24 @@ if command -v systemctl >/dev/null 2>&1; then
   fi
 fi
 
-# Remove binaries.
-for bin in notify notifyctl notifyd; do
-  if [ -f "${PREFIX}/${bin}" ]; then
-    rm -f "${PREFIX}/${bin}"
-    echo "  Removed ${PREFIX}/${bin}"
-  fi
+# Remove binaries from configured and legacy install paths.
+for dir in "${PREFIX}" /usr/local/bin /usr/bin; do
+  for bin in notify notifyctl notifyd; do
+    if [ -f "${dir}/${bin}" ]; then
+      rm -f "${dir}/${bin}"
+      echo "  Removed ${dir}/${bin}"
+    fi
+  done
 done
 
 # Remove system-level files.
 if [ -f /etc/systemd/system/notifyd.service ]; then
   rm -f /etc/systemd/system/notifyd.service
   echo "  Removed /etc/systemd/system/notifyd.service"
+fi
+if [ -f /usr/lib/systemd/system/notifyd.service ]; then
+  rm -f /usr/lib/systemd/system/notifyd.service
+  echo "  Removed /usr/lib/systemd/system/notifyd.service"
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
