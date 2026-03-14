@@ -53,7 +53,11 @@ esac
 # Resolve version.
 if [ -z "$VERSION" ]; then
   echo "Fetching latest release..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+  if command -v jq >/dev/null 2>&1; then
+    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name' | sed 's/^v//')
+  else
+    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+  fi
   if [ -z "$VERSION" ]; then
     echo "Error: could not determine latest version"
     exit 1

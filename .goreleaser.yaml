@@ -10,6 +10,8 @@ builds:
     binary: notifyd
     env:
       - CGO_ENABLED=1
+    # CGO is required for sqlite3; cross-compilation to arm64 needs a
+    # cross-compiler toolchain, so only amd64 is built by default.
     goos:
       - linux
     goarch:
