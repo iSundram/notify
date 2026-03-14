@@ -307,10 +307,6 @@ func nullTime(t *time.Time) interface{} {
 	return *t
 }
 
-type scanner interface {
-	Scan(dest ...interface{}) error
-}
-
 func scanNotification(row *sql.Row) (*model.Notification, error) {
 	var n model.Notification
 	var tagsJSON string

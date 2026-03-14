@@ -243,7 +243,8 @@ func (ss *SocketServer) handleSocketMarkAllRead(params json.RawMessage) socketRe
 	var p struct {
 		ReadBy string `json:"read_by"`
 	}
-	json.Unmarshal(params, &p)
+	// Params are optional for mark_all_read; ignore parse errors.
+	_ = json.Unmarshal(params, &p)
 
 	if err := ss.store.MarkAllRead(p.ReadBy); err != nil {
 		return socketResponse{Error: "mark all read failed"}

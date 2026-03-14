@@ -5,7 +5,7 @@ After=network.target
 [Service]
 ExecStart=/usr/bin/notifyd --config /etc/notify/config.yaml
 Restart=always
-User=root
+User=notify
 Group=notify
 
 [Install]

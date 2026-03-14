@@ -10,7 +10,7 @@ type Notification struct {
 	Title     string     `json:"title"`
 	Message   string     `json:"message"`
 	Priority  string     `json:"priority"`            // info, success, warning, critical
-	Source    string     `json:"source"`               // e.g. admini, backup, monitor
+	Source    string     `json:"source"`               // e.g. admin, backup, monitor
 	Tags      []string   `json:"tags,omitempty"`
 	Timestamp time.Time  `json:"timestamp"`
 
