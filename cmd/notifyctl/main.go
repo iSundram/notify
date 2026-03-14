@@ -45,6 +45,13 @@ func main() {
 	}
 }
 
+func defaultSocketPath() string {
+	if socket := os.Getenv("NOTIFY_SOCKET"); socket != "" {
+		return socket
+	}
+	return "/run/notify/notify.sock"
+}
+
 func printUsage() {
 	fmt.Fprintln(os.Stderr, `usage: notifyctl <command> [options]
 
@@ -60,7 +67,7 @@ func cmdCount(args []string) {
 	fs := flag.NewFlagSet("count", flag.ExitOnError)
 	status := fs.String("status", "unread", "filter: unread, read, all")
 	format := fs.String("format", "text", "output format: text, short, json")
-	socketPath := fs.String("socket", "/var/run/notify.sock", "socket path")
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
 	fs.Parse(args)
 
 	resp, err := socketCall(*socketPath, map[string]interface{}{
@@ -82,7 +89,11 @@ func cmdCount(args []string) {
 	result := resp["result"]
 	switch *format {
 	case "json":
-		data, _ := json.Marshal(result)
+		data, err := json.Marshal(result)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: marshal json: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Println(string(data))
 	case "short":
 		if m, ok := result.(map[string]interface{}); ok {
@@ -103,7 +114,7 @@ func cmdList(args []string) {
 	source := fs.String("source", "", "filter by source")
 	priority := fs.String("priority", "", "filter by priority")
 	format := fs.String("format", "table", "output format: json, table, short")
-	socketPath := fs.String("socket", "/var/run/notify.sock", "socket path")
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
 	fs.Parse(args)
 
 	resp, err := socketCall(*socketPath, map[string]interface{}{
@@ -129,7 +140,11 @@ func cmdList(args []string) {
 	result := resp["result"]
 	switch *format {
 	case "json":
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: marshal json: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Println(string(data))
 	case "short":
 		if items, ok := result.([]interface{}); ok {
@@ -174,7 +189,7 @@ func cmdMark(args []string) {
 	read := fs.Bool("read", false, "mark as read")
 	unread := fs.Bool("unread", false, "mark as unread")
 	readBy := fs.String("read-by", "", "who is marking (username)")
-	socketPath := fs.String("socket", "/var/run/notify.sock", "socket path")
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
 	fs.Parse(args)
 
 	if !*read && !*unread {
@@ -233,7 +248,7 @@ func cmdMark(args []string) {
 func cmdDelete(args []string) {
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 	id := fs.String("id", "", "notification ID")
-	socketPath := fs.String("socket", "/var/run/notify.sock", "socket path")
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
 	fs.Parse(args)
 
 	if *id == "" {
@@ -260,7 +275,7 @@ func cmdDelete(args []string) {
 
 func cmdFollow(args []string) {
 	fs := flag.NewFlagSet("follow", flag.ExitOnError)
-	socketPath := fs.String("socket", "/var/run/notify.sock", "socket path")
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
 	fs.Parse(args)
 
 	fmt.Println("Following new notifications... (Ctrl+C to stop)")

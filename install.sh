@@ -15,6 +15,18 @@ set -e
 REPO="iSundram/notify"
 PREFIX="/usr/local/bin"
 VERSION=""
+HAS_NOTIFYD=0
+
+normalize_version() {
+  v="$1"
+  v=$(printf "%s" "$v" | tr -d '[:space:]')
+  v=${v#v}
+  printf "%s" "$v"
+}
+
+is_valid_version() {
+  printf "%s" "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'
+}
 
 usage() {
   echo "Usage: install.sh [--version VERSION] [--prefix DIR]"
@@ -54,14 +66,22 @@ esac
 if [ -z "$VERSION" ]; then
   echo "Fetching latest release..."
   if command -v jq >/dev/null 2>&1; then
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name' | sed 's/^v//')
+    TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name // empty')
   else
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+    RESPONSE=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")
+    TAG=$(printf "%s" "$RESPONSE" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   fi
-  if [ -z "$VERSION" ]; then
+  VERSION=$(normalize_version "$TAG")
+  if [ -z "$VERSION" ] || ! is_valid_version "$VERSION"; then
     echo "Error: could not determine latest version"
     exit 1
   fi
+fi
+
+VERSION=$(normalize_version "$VERSION")
+if [ -z "$VERSION" ] || ! is_valid_version "$VERSION"; then
+  echo "Error: invalid version '$VERSION' (expected semver like 1.2.3)"
+  exit 1
 fi
 
 echo "Installing notify v${VERSION} (${OS}/${ARCH})..."
@@ -85,14 +105,49 @@ for bin in notify notifyctl notifyd; do
   if [ -f "${TMPDIR}/${bin}" ]; then
     install -m 755 "${TMPDIR}/${bin}" "${PREFIX}/${bin}"
     echo "  Installed ${PREFIX}/${bin}"
+    if [ "$bin" = "notifyd" ]; then
+      HAS_NOTIFYD=1
+    fi
   fi
 done
 
+if [ ! -f "${TMPDIR}/notify" ] || [ ! -f "${TMPDIR}/notifyctl" ]; then
+  echo "Error: release archive is missing required binaries (notify, notifyctl)"
+  exit 1
+fi
+
+if [ "$ARCH" = "amd64" ] && [ "$HAS_NOTIFYD" != "1" ]; then
+  echo "Error: release archive for ${OS}/${ARCH} is missing notifyd"
+  exit 1
+fi
+
 # Install optional files if running as root.
 if [ "$(id -u)" = "0" ]; then
-  if [ -f "${TMPDIR}/systemd/notifyd.service" ]; then
+  if [ "$HAS_NOTIFYD" = "1" ] && [ -f "${TMPDIR}/systemd/notifyd.service" ]; then
+    if ! getent group notify >/dev/null 2>&1; then
+      if command -v groupadd >/dev/null 2>&1; then
+        groupadd --system notify >/dev/null 2>&1 || {
+          echo "Error: failed to create group 'notify'"
+          exit 1
+        }
+      else
+        echo "Error: group 'notify' is missing and groupadd is unavailable"
+        exit 1
+      fi
+    fi
+    if ! id -u notify >/dev/null 2>&1; then
+      if command -v useradd >/dev/null 2>&1; then
+        useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin -g notify notify >/dev/null 2>&1 || {
+          echo "Error: failed to create user 'notify'"
+          exit 1
+        }
+      else
+        echo "Error: user 'notify' is missing and useradd is unavailable"
+        exit 1
+      fi
+    fi
     mkdir -p /etc/systemd/system
-    cp "${TMPDIR}/systemd/notifyd.service" /etc/systemd/system/notifyd.service
+    sed "s|/usr/local/bin/notifyd|${PREFIX}/notifyd|g" "${TMPDIR}/systemd/notifyd.service" > /etc/systemd/system/notifyd.service
     echo "  Installed /etc/systemd/system/notifyd.service"
   fi
   if [ -f "${TMPDIR}/scripts/notify.sh" ]; then
@@ -100,13 +155,23 @@ if [ "$(id -u)" = "0" ]; then
     cp "${TMPDIR}/scripts/notify.sh" /etc/profile.d/notify.sh
     echo "  Installed /etc/profile.d/notify.sh"
   fi
+  if [ "$HAS_NOTIFYD" = "1" ] && [ -f "${TMPDIR}/configs/notify.yaml" ] && [ ! -f /etc/notify/config.yaml ]; then
+    mkdir -p /etc/notify
+    cp "${TMPDIR}/configs/notify.yaml" /etc/notify/config.yaml
+    echo "  Installed /etc/notify/config.yaml"
+  fi
 fi
 
 echo ""
 echo "notify v${VERSION} installed successfully!"
 echo ""
-echo "To start the daemon:"
-echo "  sudo systemctl enable --now notifyd"
+if [ "$HAS_NOTIFYD" = "1" ]; then
+  echo "To start the daemon:"
+  echo "  sudo systemctl daemon-reload"
+  echo "  sudo systemctl enable --now notifyd"
+else
+  echo "notifyd is not available for ${OS}/${ARCH}; CLI tools were installed."
+fi
 echo ""
 echo "To send a notification:"
 echo "  notify --title 'Hello' --message 'World'"

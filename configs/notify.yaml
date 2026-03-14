@@ -1,0 +1,5 @@
+db_path: /var/lib/notify/notify.db
+socket_path: /run/notify/notify.sock
+http_addr: ":8008"
+log_dir: /var/log/notify
+cache_file: /run/notify/unread_count

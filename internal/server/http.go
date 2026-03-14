@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -155,9 +156,19 @@ func (s *HTTPServer) handleCount(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
 	var req model.MarkRequest
-	// Body is optional
-	json.NewDecoder(r.Body).Decode(&req)
+	if r.Body != nil {
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+	}
 
 	if err := s.store.MarkRead(id, req.ReadBy); err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -174,6 +185,10 @@ func (s *HTTPServer) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
 
 	if err := s.store.MarkUnread(id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -190,6 +205,10 @@ func (s *HTTPServer) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
 
 	if err := s.store.Delete(id); err != nil {
 		if strings.Contains(err.Error(), "not found") {

@@ -3,10 +3,15 @@ Description=Notify Notification Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/notifyd --config /etc/notify/config.yaml
+Type=simple
+ExecStart=/usr/local/bin/notifyd --config /etc/notify/config.yaml
 Restart=always
+RestartSec=5
 User=notify
 Group=notify
+RuntimeDirectory=notify
+StateDirectory=notify
+LogsDirectory=notify
 
 [Install]
 WantedBy=multi-user.target

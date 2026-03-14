@@ -81,12 +81,21 @@ func (ss *SocketServer) handleConn(conn net.Conn) {
 
 		var req socketRequest
 		if err := json.Unmarshal(line, &req); err != nil {
-			writeSocketResponse(conn, socketResponse{Error: "invalid JSON"})
+			if werr := writeSocketResponse(conn, socketResponse{Error: "invalid JSON"}); werr != nil {
+				log.Printf("ERROR socket write invalid-json response: %v", werr)
+				return
+			}
 			continue
 		}
 
 		resp := ss.dispatch(req)
-		writeSocketResponse(conn, resp)
+		if err := writeSocketResponse(conn, resp); err != nil {
+			log.Printf("ERROR socket write response: %v", err)
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("ERROR socket scanner: %v", err)
 	}
 }
 
@@ -127,6 +136,15 @@ func (ss *SocketServer) handleNotify(params json.RawMessage) socketResponse {
 	if p.Priority == "" {
 		p.Priority = "info"
 	}
+	if p.Title == "" {
+		return socketResponse{Error: "title is required"}
+	}
+	if p.Message == "" {
+		return socketResponse{Error: "message is required"}
+	}
+	if !model.ValidPriorities[p.Priority] {
+		return socketResponse{Error: "invalid priority: " + p.Priority}
+	}
 
 	n := &model.Notification{
 		Title:     sanitize(p.Title),
@@ -164,6 +182,9 @@ func (ss *SocketServer) handleSocketCount(params json.RawMessage) socketResponse
 	if p.Status == "" {
 		p.Status = "unread"
 	}
+	if !model.ValidStatuses[p.Status] {
+		return socketResponse{Error: "invalid status: " + p.Status}
+	}
 
 	count, err := ss.store.Count(p.Status)
 	if err != nil {
@@ -186,6 +207,12 @@ func (ss *SocketServer) handleSocketList(params json.RawMessage) socketResponse 
 	}
 	if p.Status == "" {
 		p.Status = "all"
+	}
+	if !model.ValidStatuses[p.Status] {
+		return socketResponse{Error: "invalid status: " + p.Status}
+	}
+	if p.Priority != "" && !model.ValidPriorities[p.Priority] {
+		return socketResponse{Error: "invalid priority: " + p.Priority}
 	}
 	if p.Limit <= 0 {
 		p.Limit = 50
@@ -216,6 +243,9 @@ func (ss *SocketServer) handleSocketMarkRead(params json.RawMessage) socketRespo
 	if err := json.Unmarshal(params, &p); err != nil {
 		return socketResponse{Error: "invalid params"}
 	}
+	if p.ID == "" {
+		return socketResponse{Error: "id is required"}
+	}
 
 	if err := ss.store.MarkRead(p.ID, p.ReadBy); err != nil {
 		return socketResponse{Error: "mark read failed: " + err.Error()}
@@ -230,6 +260,9 @@ func (ss *SocketServer) handleSocketMarkUnread(params json.RawMessage) socketRes
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return socketResponse{Error: "invalid params"}
+	}
+	if p.ID == "" {
+		return socketResponse{Error: "id is required"}
 	}
 
 	if err := ss.store.MarkUnread(p.ID); err != nil {
@@ -260,6 +293,9 @@ func (ss *SocketServer) handleSocketDelete(params json.RawMessage) socketRespons
 	if err := json.Unmarshal(params, &p); err != nil {
 		return socketResponse{Error: "invalid params"}
 	}
+	if p.ID == "" {
+		return socketResponse{Error: "id is required"}
+	}
 
 	if err := ss.store.Delete(p.ID); err != nil {
 		return socketResponse{Error: "delete failed: " + err.Error()}
@@ -268,8 +304,14 @@ func (ss *SocketServer) handleSocketDelete(params json.RawMessage) socketRespons
 	return socketResponse{Result: map[string]string{"status": "ok"}}
 }
 
-func writeSocketResponse(conn net.Conn, resp socketResponse) {
-	data, _ := json.Marshal(resp)
+func writeSocketResponse(conn net.Conn, resp socketResponse) error {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("marshal response: %w", err)
+	}
 	data = append(data, '\n')
-	conn.Write(data)
+	if _, err := conn.Write(data); err != nil {
+		return fmt.Errorf("write response: %w", err)
+	}
+	return nil
 }

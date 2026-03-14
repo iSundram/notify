@@ -16,12 +16,17 @@ var (
 )
 
 func main() {
+	defaultSocket := os.Getenv("NOTIFY_SOCKET")
+	if defaultSocket == "" {
+		defaultSocket = "/run/notify/notify.sock"
+	}
+
 	showVersion := flag.Bool("version", false, "print version and exit")
 	title := flag.String("title", "", "notification title")
 	message := flag.String("message", "", "notification message")
 	priority := flag.String("priority", "info", "priority: info, success, warning, critical")
 	source := flag.String("source", "", "notification source")
-	socketPath := flag.String("socket", "/var/run/notify.sock", "path to notifyd socket")
+	socketPath := flag.String("socket", defaultSocket, "path to notifyd socket")
 	flag.Parse()
 
 	if *showVersion {

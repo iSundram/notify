@@ -24,7 +24,11 @@ Download and install the latest release with a single command:
 curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | sudo sh
 ```
 
-This auto-detects your architecture, downloads the correct binaries, and installs them to `/usr/local/bin`. When run as root it also installs the systemd service and the shell startup script.
+This auto-detects your architecture, downloads the correct binaries, and installs them to `/usr/local/bin`. When run as root it also installs:
+
+- `systemd/notifyd.service`
+- `scripts/notify.sh`
+- `/etc/notify/config.yaml` (if not already present)
 
 ### Install a Specific Version
 
@@ -42,6 +46,12 @@ curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | s
 
 Requires Go 1.24+ and a C compiler (for SQLite via CGO).
 
+On Debian/Ubuntu:
+
+```bash
+sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev
+```
+
 ```bash
 git clone https://github.com/iSundram/notify.git
 cd notify
@@ -57,6 +67,8 @@ After installing, start the daemon with systemd:
 
 ```bash
 sudo cp systemd/notifyd.service /etc/systemd/system/  # only needed for source installs
+sudo mkdir -p /etc/notify
+sudo cp configs/notify.yaml /etc/notify/config.yaml
 sudo systemctl daemon-reload
 sudo systemctl enable --now notifyd
 ```
@@ -89,10 +101,10 @@ notifyd --config /etc/notify/config.yaml
 
 ```yaml
 db_path: /var/lib/notify/notify.db
-socket_path: /var/run/notify.sock
+socket_path: /run/notify/notify.sock
 http_addr: ":8008"
 log_dir: /var/log/notify
-cache_file: /var/run/notify/unread_count
+cache_file: /run/notify/unread_count
 ```
 
 ## Sending Notifications
@@ -184,9 +196,12 @@ Releases are fully automated via [GoReleaser](https://goreleaser.com/) and GitHu
    ```
 3. GitHub Actions will automatically:
    - Read the version from `VERSION`
+   - Validate semver format
    - Create a `v0.2.0` git tag
    - Build binaries for all supported platforms
    - Publish a GitHub Release with archives and checksums
+
+If `v<version>` already exists, the workflow fails and asks you to bump `VERSION`.
 
 ### What Gets Built
 
@@ -196,7 +211,7 @@ Releases are fully automated via [GoReleaser](https://goreleaser.com/) and GitHu
 | `notify`   | linux/amd64, linux/arm64 | Pure Go, no CGO        |
 | `notifyctl`| linux/amd64, linux/arm64 | Pure Go, no CGO        |
 
-Each release archive includes the binaries along with `README.md`, `LICENSE`, `systemd/notifyd.service`, and `scripts/notify.sh`.
+Each release archive includes the binaries along with `README.md`, `LICENSE`, `systemd/notifyd.service`, `scripts/notify.sh`, and `configs/notify.yaml`.
 
 ### Version in Binaries
 
@@ -228,6 +243,8 @@ notify/
 │   └── store/        # SQLite storage backend
 ├── scripts/
 │   └── notify.sh     # Shell startup script (profile.d)
+├── configs/
+│   └── notify.yaml   # Default daemon config used by installer/systemd
 ├── systemd/
 │   └── notifyd.service
 ├── .goreleaser.yaml  # GoReleaser build configuration

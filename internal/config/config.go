@@ -19,10 +19,10 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		DBPath:     "/var/lib/notify/notify.db",
-		SocketPath: "/var/run/notify.sock",
+		SocketPath: "/run/notify/notify.sock",
 		HTTPAddr:   ":8008",
 		LogDir:     "/var/log/notify",
-		CacheFile:  "/var/run/notify/unread_count",
+		CacheFile:  "/run/notify/unread_count",
 	}
 }
 
