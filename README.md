@@ -8,9 +8,10 @@ Notify is a simple, fast, and developer-friendly notification system designed fo
 
 - **notifyd** — a centralized notification daemon
 - **notify** — a CLI client for sending notifications
-- **notifyctl** — a management tool for listing, counting, marking, and deleting notifications
-- **Unix socket** for local IPC
-- **HTTP API** for remote access
+- **notifyctl** — a management tool for listing, counting, marking, deleting, and **live dashboarding**
+- **Unix socket** for local IPC with real-time `watch` support
+- **HTTP API** for remote access with **Server-Sent Events (SSE)** streaming
+- **Interactive TUI Dashboard** for real-time notification management
 - **Read/unread state** with persistent storage
 - **Terminal startup message** showing unread count
 
@@ -163,6 +164,9 @@ notifyctl delete --id <uuid>
 
 # Follow new notifications (live)
 notifyctl follow
+
+# Interactive Dashboard (TUI)
+notifyctl dashboard
 ```
 
 ## HTTP API Endpoints
@@ -175,6 +179,7 @@ notifyctl follow
 | POST   | `/notifications/{id}/read`    | Mark as read             |
 | POST   | `/notifications/{id}/unread`  | Mark as unread           |
 | DELETE | `/notifications/{id}`         | Delete a notification    |
+| GET    | `/stream`                     | Real-time event stream (SSE) |
 
 ### Query Parameters for GET /notifications
 

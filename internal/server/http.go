@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iSundram/notify/internal/event"
 	"github.com/iSundram/notify/internal/model"
 	"github.com/iSundram/notify/internal/store"
 )
@@ -16,12 +17,13 @@ import (
 // HTTPServer wraps the notification store with HTTP handlers.
 type HTTPServer struct {
 	store store.Store
+	bus   *event.Bus
 	mux   *http.ServeMux
 }
 
 // NewHTTPServer creates a new HTTP server with routes.
-func NewHTTPServer(s store.Store) *HTTPServer {
-	srv := &HTTPServer{store: s, mux: http.NewServeMux()}
+func NewHTTPServer(s store.Store, bus *event.Bus) *HTTPServer {
+	srv := &HTTPServer{store: s, bus: bus, mux: http.NewServeMux()}
 	srv.routes()
 	return srv
 }
@@ -38,6 +40,33 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("POST /notifications/{id}/read", s.handleMarkRead)
 	s.mux.HandleFunc("POST /notifications/{id}/unread", s.handleMarkUnread)
 	s.mux.HandleFunc("DELETE /notifications/{id}", s.handleDelete)
+	s.mux.HandleFunc("GET /stream", s.handleStream)
+}
+
+func (s *HTTPServer) handleStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch := s.bus.Subscribe()
+	defer s.bus.Unsubscribe(ch)
+
+	for {
+		select {
+		case ev := <-ch:
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (s *HTTPServer) handleCreate(w http.ResponseWriter, r *http.Request) {

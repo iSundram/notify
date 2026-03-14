@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/iSundram/notify/internal/event"
 	"github.com/iSundram/notify/internal/model"
 	"github.com/iSundram/notify/internal/store"
 )
@@ -16,6 +17,7 @@ import (
 // SocketServer handles newline-delimited JSON RPC over a Unix socket.
 type SocketServer struct {
 	store    store.Store
+	bus      *event.Bus
 	listener net.Listener
 	path     string
 }
@@ -31,7 +33,7 @@ type socketResponse struct {
 }
 
 // NewSocketServer creates a Unix domain socket server.
-func NewSocketServer(s store.Store, path string) (*SocketServer, error) {
+func NewSocketServer(s store.Store, path string, bus *event.Bus) (*SocketServer, error) {
 	// Remove any stale socket file.
 	os.Remove(path)
 
@@ -46,7 +48,7 @@ func NewSocketServer(s store.Store, path string) (*SocketServer, error) {
 		return nil, fmt.Errorf("chmod socket: %w", err)
 	}
 
-	return &SocketServer{store: s, listener: ln, path: path}, nil
+	return &SocketServer{store: s, bus: bus, listener: ln, path: path}, nil
 }
 
 // Serve starts accepting connections. Blocks until listener is closed.
@@ -88,6 +90,11 @@ func (ss *SocketServer) handleConn(conn net.Conn) {
 			continue
 		}
 
+		if req.Method == "watch" {
+			ss.handleWatch(conn)
+			return // watch hijacks the connection
+		}
+
 		resp := ss.dispatch(req)
 		if err := writeSocketResponse(conn, resp); err != nil {
 			log.Printf("ERROR socket write response: %v", err)
@@ -96,6 +103,22 @@ func (ss *SocketServer) handleConn(conn net.Conn) {
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("ERROR socket scanner: %v", err)
+	}
+}
+
+func (ss *SocketServer) handleWatch(conn net.Conn) {
+	ch := ss.bus.Subscribe()
+	defer ss.bus.Unsubscribe(ch)
+
+	// Send an initial OK response so the client knows the watch started.
+	if err := writeSocketResponse(conn, socketResponse{Result: "watching"}); err != nil {
+		return
+	}
+
+	for ev := range ch {
+		if err := writeSocketResponse(conn, socketResponse{Result: ev}); err != nil {
+			return
+		}
 	}
 }
 

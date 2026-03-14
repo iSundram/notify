@@ -37,32 +37,34 @@ func main() {
 	case "delete":
 		cmdDelete(args)
 	case "follow":
-		cmdFollow(args)
+	        cmdFollow(args)
+	case "dashboard":
+	        cmdDashboard(args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
-		printUsage()
-		os.Exit(1)
+	        fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
+	        printUsage()
+	        os.Exit(1)
 	}
-}
+	}
 
-func defaultSocketPath() string {
+	func defaultSocketPath() string {
 	if socket := os.Getenv("NOTIFY_SOCKET"); socket != "" {
-		return socket
+	        return socket
 	}
 	return "/run/notify/notify.sock"
-}
+	}
 
-func printUsage() {
+	func printUsage() {
 	fmt.Fprintln(os.Stderr, `usage: notifyctl <command> [options]
 
-commands:
-  count   - count notifications
-  list    - list notifications
-  mark    - mark notification(s) read/unread
-  delete  - delete a notification
-  follow  - follow new notifications (live)`)
-}
-
+	commands:
+	count     - count notifications
+	list      - list notifications
+	mark      - mark notification(s) read/unread
+	delete    - delete a notification
+	follow    - follow new notifications (live)
+	dashboard - interactive terminal dashboard`)
+	}
 func cmdCount(args []string) {
 	fs := flag.NewFlagSet("count", flag.ExitOnError)
 	status := fs.String("status", "unread", "filter: unread, read, all")
@@ -318,6 +320,27 @@ func cmdFollow(args []string) {
 }
 
 // --- helpers ---
+
+func cmdDashboard(args []string) {
+	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
+	socketPath := fs.String("socket", defaultSocketPath(), "socket path")
+	fs.Parse(args)
+
+	l := list.New([]list.Item{}, itemDelegate{}, 0, 0)
+	l.Title = "Notifications"
+
+	m := modelTUI{
+		list:       l,
+		socketPath: *socketPath,
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	go watchEvents(*socketPath, p)
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running dashboard: %v", err)
+		os.Exit(1)
+	}
+}
 
 func socketCall(path string, req interface{}) (map[string]interface{}, error) {
 	conn, err := net.DialTimeout("unix", path, 2*time.Second)
