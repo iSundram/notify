@@ -116,7 +116,7 @@ if [ ! -f "${TMPDIR}/notify" ] || [ ! -f "${TMPDIR}/notifyctl" ]; then
   exit 1
 fi
 
-if [ "$ARCH" = "amd64" ] && [ "$HAS_NOTIFYD" != "1" ]; then
+if [ "$HAS_NOTIFYD" != "1" ]; then
   echo "Error: release archive for ${OS}/${ARCH} is missing notifyd"
   exit 1
 fi
@@ -165,13 +165,9 @@ fi
 echo ""
 echo "notify v${VERSION} installed successfully!"
 echo ""
-if [ "$HAS_NOTIFYD" = "1" ]; then
-  echo "To start the daemon:"
-  echo "  sudo systemctl daemon-reload"
-  echo "  sudo systemctl enable --now notifyd"
-else
-  echo "notifyd is not available for ${OS}/${ARCH}; CLI tools were installed."
-fi
+echo "To start the daemon:"
+echo "  sudo systemctl daemon-reload"
+echo "  sudo systemctl enable --now notifyd"
 echo ""
 echo "To send a notification:"
 echo "  notify --title 'Hello' --message 'World'"

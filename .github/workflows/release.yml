@@ -24,8 +24,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install C compiler for CGO (sqlite3)
-        run: sudo apt-get update && sudo apt-get install -y gcc
+      - name: Install C compilers for CGO (sqlite3)
+        run: sudo apt-get update && sudo apt-get install -y gcc gcc-aarch64-linux-gnu
 
       - name: Read version
         id: version

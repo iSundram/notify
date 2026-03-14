@@ -5,17 +5,29 @@ before:
     - go mod tidy
 
 builds:
-  - id: notifyd
+  - id: notifyd-amd64
     main: ./cmd/notifyd
     binary: notifyd
     env:
       - CGO_ENABLED=1
-    # CGO is required for sqlite3; cross-compilation to arm64 needs a
-    # cross-compiler toolchain, so only amd64 is built by default.
+      - CC=gcc
     goos:
       - linux
     goarch:
       - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: notifyd-arm64
+    main: ./cmd/notifyd
+    binary: notifyd
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
+    goos:
+      - linux
+    goarch:
+      - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 

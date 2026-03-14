@@ -207,7 +207,7 @@ If `v<version>` already exists, the workflow fails and asks you to bump `VERSION
 
 | Binary     | Platforms        | Notes                          |
 |------------|------------------|--------------------------------|
-| `notifyd`  | linux/amd64      | Requires CGO (sqlite3)         |
+| `notifyd`  | linux/amd64, linux/arm64 | Requires CGO (sqlite3) |
 | `notify`   | linux/amd64, linux/arm64 | Pure Go, no CGO        |
 | `notifyctl`| linux/amd64, linux/arm64 | Pure Go, no CGO        |
 
