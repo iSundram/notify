@@ -1,0 +1,12 @@
+[Unit]
+Description=Notify Notification Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/notifyd --config /etc/notify/config.yaml
+Restart=always
+User=notify
+Group=notify
+
+[Install]
+WantedBy=multi-user.target
