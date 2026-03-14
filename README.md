@@ -87,6 +87,26 @@ notifyctl --version
 notifyd --version
 ```
 
+### Uninstall
+
+Remove installed binaries and service files:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/uninstall.sh | sudo sh
+```
+
+To fully purge config and data too:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/uninstall.sh | sudo sh -s -- --purge-config --purge-data --remove-user
+```
+
+Reinstall anytime with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | sudo sh
+```
+
 ## Running the Daemon
 
 ```bash
@@ -249,7 +269,8 @@ notify/
 │   └── notifyd.service
 ├── .goreleaser.yaml  # GoReleaser build configuration
 ├── VERSION           # Current version (edit to trigger a release)
-└── install.sh        # One-line installer script
+├── install.sh        # One-line installer script
+└── uninstall.sh      # Uninstall script (with optional purge flags)
 ```
 
 ## License
