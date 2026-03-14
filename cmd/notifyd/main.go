@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -18,9 +19,21 @@ import (
 	"github.com/iSundram/notify/internal/store"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	configPath := flag.String("config", "", "path to config file (YAML)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("notifyd %s (commit: %s, built: %s)\n", version, commit, date)
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

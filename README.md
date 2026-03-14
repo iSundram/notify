@@ -14,12 +14,65 @@ Notify is a simple, fast, and developer-friendly notification system designed fo
 - **Read/unread state** with persistent storage
 - **Terminal startup message** showing unread count
 
-## Building
+## Installation
+
+### Quick Install (recommended)
+
+Download and install the latest release with a single command:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | sudo sh
+```
+
+This auto-detects your architecture, downloads the correct binaries, and installs them to `/usr/local/bin`. When run as root it also installs the systemd service and the shell startup script.
+
+### Install a Specific Version
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | sudo sh -s -- --version 0.1.0
+```
+
+### Install to a Custom Directory
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iSundram/notify/main/install.sh | sh -s -- --prefix ~/.local/bin
+```
+
+### Install from Source
+
+Requires Go 1.24+ and a C compiler (for SQLite via CGO).
+
+```bash
+git clone https://github.com/iSundram/notify.git
+cd notify
 go build -o notifyd   ./cmd/notifyd
 go build -o notify    ./cmd/notify
 go build -o notifyctl ./cmd/notifyctl
+sudo install -m 755 notifyd notify notifyctl /usr/local/bin/
+```
+
+### Post-Install Setup
+
+After installing, start the daemon with systemd:
+
+```bash
+sudo cp systemd/notifyd.service /etc/systemd/system/  # only needed for source installs
+sudo systemctl daemon-reload
+sudo systemctl enable --now notifyd
+```
+
+Optionally, enable the terminal startup message (shows unread count on new shells):
+
+```bash
+sudo cp scripts/notify.sh /etc/profile.d/  # only needed for source installs
+```
+
+### Verify Installation
+
+```bash
+notify --version
+notifyctl --version
+notifyd --version
 ```
 
 ## Running the Daemon
@@ -101,24 +154,85 @@ notifyctl follow
 
 ## Terminal Startup Message
 
-Install `scripts/notify.sh` to `/etc/profile.d/` to display unread notification count on terminal startup:
+The install script automatically places `scripts/notify.sh` into `/etc/profile.d/` when run as root. On every new shell session you'll see:
 
 ```
 You have 3 unread notification(s). Run 'notifyctl list --status unread'
 ```
 
-## Systemd Service
+For source installs, copy it manually:
 
 ```bash
-cp systemd/notifyd.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now notifyd
+sudo cp scripts/notify.sh /etc/profile.d/
+```
+
+## Releasing a New Version
+
+Releases are fully automated via [GoReleaser](https://goreleaser.com/) and GitHub Actions.
+
+### How to Release
+
+1. Edit the `VERSION` file with the new semver version:
+   ```bash
+   echo "0.2.0" > VERSION
+   ```
+2. Commit and push to `main`:
+   ```bash
+   git add VERSION
+   git commit -m "release: v0.2.0"
+   git push origin main
+   ```
+3. GitHub Actions will automatically:
+   - Read the version from `VERSION`
+   - Create a `v0.2.0` git tag
+   - Build binaries for all supported platforms
+   - Publish a GitHub Release with archives and checksums
+
+### What Gets Built
+
+| Binary     | Platforms        | Notes                          |
+|------------|------------------|--------------------------------|
+| `notifyd`  | linux/amd64      | Requires CGO (sqlite3)         |
+| `notify`   | linux/amd64, linux/arm64 | Pure Go, no CGO        |
+| `notifyctl`| linux/amd64, linux/arm64 | Pure Go, no CGO        |
+
+Each release archive includes the binaries along with `README.md`, `LICENSE`, `systemd/notifyd.service`, and `scripts/notify.sh`.
+
+### Version in Binaries
+
+All binaries have the version, commit SHA, and build date embedded at compile time:
+
+```bash
+$ notify --version
+notify 0.1.0 (commit: abc1234, built: 2026-03-14T05:00:00Z)
 ```
 
 ## Testing
 
 ```bash
 go test ./...
+```
+
+## Project Structure
+
+```
+notify/
+├── cmd/
+│   ├── notify/       # CLI client for sending notifications
+│   ├── notifyctl/    # Management tool (list, count, mark, delete, follow)
+│   └── notifyd/      # Notification daemon (socket + HTTP server)
+├── internal/
+│   ├── config/       # YAML configuration loader
+│   ├── model/        # Notification data model
+│   ├── server/       # Socket and HTTP server implementations
+│   └── store/        # SQLite storage backend
+├── scripts/
+│   └── notify.sh     # Shell startup script (profile.d)
+├── systemd/
+│   └── notifyd.service
+├── .goreleaser.yaml  # GoReleaser build configuration
+├── VERSION           # Current version (edit to trigger a release)
+└── install.sh        # One-line installer script
 ```
 
 ## License

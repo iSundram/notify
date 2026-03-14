@@ -1,0 +1,22 @@
+# Binaries
+notify
+notifyd
+notifyctl
+*.exe
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+*.db
+coverage.out

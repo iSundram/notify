@@ -1,0 +1,74 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: notifyd
+    main: ./cmd/notifyd
+    binary: notifyd
+    env:
+      - CGO_ENABLED=1
+    # CGO is required for sqlite3; cross-compilation to arm64 needs a
+    # cross-compiler toolchain, so only amd64 is built by default.
+    goos:
+      - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: notify
+    main: ./cmd/notify
+    binary: notify
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: notifyctl
+    main: ./cmd/notifyctl
+    binary: notifyctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - systemd/notifyd.service
+      - scripts/notify.sh
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: iSundram
+    name: notify
+  name_template: "v{{.Version}}"
