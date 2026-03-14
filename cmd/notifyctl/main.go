@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -19,6 +25,9 @@ func main() {
 	args := os.Args[2:]
 
 	switch subcmd {
+	case "version", "--version":
+		fmt.Printf("notifyctl %s (commit: %s, built: %s)\n", version, commit, date)
+		return
 	case "count":
 		cmdCount(args)
 	case "list":

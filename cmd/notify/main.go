@@ -9,13 +9,25 @@ import (
 	"time"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	showVersion := flag.Bool("version", false, "print version and exit")
 	title := flag.String("title", "", "notification title")
 	message := flag.String("message", "", "notification message")
 	priority := flag.String("priority", "info", "priority: info, success, warning, critical")
 	source := flag.String("source", "", "notification source")
 	socketPath := flag.String("socket", "/var/run/notify.sock", "path to notifyd socket")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("notify %s (commit: %s, built: %s)\n", version, commit, date)
+		return
+	}
 
 	if *title == "" || *message == "" {
 		fmt.Fprintln(os.Stderr, "usage: notify --title TITLE --message MESSAGE [--priority PRIORITY] [--source SOURCE]")
