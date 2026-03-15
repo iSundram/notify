@@ -1,20 +1,39 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	)
+	"github.com/charmbracelet/lipgloss"
+	"github.com/iSundram/notify/internal/event"
+	"github.com/iSundram/notify/internal/model"
+)
+
 var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
+
+	titleStyle        = lipgloss.NewStyle().MarginLeft(2).Bold(true).Foreground(lipgloss.Color("170"))
+	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
+	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
+	detailStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).MarginLeft(2)
+
+	priorityInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // Blue
+	prioritySuccess  = lipgloss.NewStyle().Foreground(lipgloss.Color("76"))  // Green
+	priorityWarning  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Amber
+	priorityCritical = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
 )
 
 func main() {
@@ -39,34 +58,35 @@ func main() {
 	case "delete":
 		cmdDelete(args)
 	case "follow":
-	        cmdFollow(args)
+		cmdFollow(args)
 	case "dashboard":
-	        cmdDashboard(args)
+		cmdDashboard(args)
 	default:
-	        fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
-	        printUsage()
-	        os.Exit(1)
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
+		printUsage()
+		os.Exit(1)
 	}
-	}
+}
 
-	func defaultSocketPath() string {
+func defaultSocketPath() string {
 	if socket := os.Getenv("NOTIFY_SOCKET"); socket != "" {
-	        return socket
+		return socket
 	}
 	return "/run/notify/notify.sock"
-	}
+}
 
-	func printUsage() {
+func printUsage() {
 	fmt.Fprintln(os.Stderr, `usage: notifyctl <command> [options]
 
-	commands:
-	count     - count notifications
-	list      - list notifications
-	mark      - mark notification(s) read/unread
-	delete    - delete a notification
-	follow    - follow new notifications (live)
-	dashboard - interactive terminal dashboard`)
-	}
+commands:
+  count     - count notifications
+  list      - list notifications
+  mark      - mark notification(s) read/unread
+  delete    - delete a notification
+  follow    - follow new notifications (live)
+  dashboard - interactive terminal dashboard`)
+}
+
 func cmdCount(args []string) {
 	fs := flag.NewFlagSet("count", flag.ExitOnError)
 	status := fs.String("status", "unread", "filter: unread, read, all")
@@ -321,7 +341,7 @@ func cmdFollow(args []string) {
 	}
 }
 
-// --- helpers ---
+// --- TUI Dashboard ---
 
 func cmdDashboard(args []string) {
 	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
@@ -344,6 +364,232 @@ func cmdDashboard(args []string) {
 	}
 }
 
+type item struct {
+	n model.Notification
+}
+
+func (i item) Title() string       { return i.n.Title }
+func (i item) Description() string { return i.n.Message }
+func (i item) FilterValue() string { return i.n.Title + " " + i.n.Source }
+
+type itemDelegate struct{}
+
+func (d itemDelegate) Height() int                               { return 1 }
+func (d itemDelegate) Spacing() int                              { return 0 }
+func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(item)
+	if !ok {
+		return
+	}
+
+	fn := itemStyle.Render
+	if index == m.Index() {
+		fn = func(s ...string) string {
+			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+		}
+	}
+
+	pSym := "●"
+	pStyle := priorityInfo
+	switch i.n.Priority {
+	case "success":
+		pStyle = prioritySuccess
+	case "warning":
+		pStyle = priorityWarning
+	case "critical":
+		pStyle = priorityCritical
+	}
+
+	readSym := " "
+	if !i.n.Read {
+		readSym = "*"
+	}
+
+	fmt.Fprint(w, fn(fmt.Sprintf("%s %s %-30s [%s]", readSym, pStyle.Render(pSym), truncate(i.n.Title, 30), i.n.Source)))
+}
+
+type modelTUI struct {
+	list         list.Model
+	socketPath   string
+	err          error
+	lastSelected *model.Notification
+}
+
+type eventMsg event.Event
+type errMsg struct{ err error }
+
+func (m modelTUI) Init() tea.Cmd {
+	return m.fetchInitial()
+}
+
+func watchEvents(socketPath string, p *tea.Program) {
+	for {
+		conn, err := net.Dial("unix", socketPath)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		req := map[string]string{"method": "watch"}
+		json.NewEncoder(conn).Encode(req)
+		conn.Write([]byte("\n"))
+
+		scanner := bufio.NewScanner(conn)
+		// Skip "watching" response
+		scanner.Scan()
+
+		for scanner.Scan() {
+			var resp struct {
+				Result event.Event `json:"result"`
+			}
+			if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+				continue
+			}
+			p.Send(eventMsg(resp.Result))
+		}
+		conn.Close()
+		time.Sleep(time.Second)
+	}
+}
+
+func (m modelTUI) fetchInitial() tea.Cmd {
+	return func() tea.Msg {
+		resp, err := socketCall(m.socketPath, map[string]interface{}{
+			"method": "list",
+			"params": map[string]interface{}{"limit": 50},
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+		if result, ok := resp["result"].([]interface{}); ok {
+			var items []list.Item
+			for _, r := range result {
+				data, _ := json.Marshal(r)
+				var n model.Notification
+				json.Unmarshal(data, &n)
+				items = append(items, item{n: n})
+			}
+			return initialItemsMsg(items)
+		}
+		return nil
+	}
+}
+
+type initialItemsMsg []list.Item
+
+func (m modelTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "r":
+			if i, ok := m.list.SelectedItem().(item); ok {
+				go m.markRead(i.n.ID)
+			}
+		case "d":
+			if i, ok := m.list.SelectedItem().(item); ok {
+				go m.deleteNotification(i.n.ID)
+			}
+		}
+	case initialItemsMsg:
+		m.list.SetItems(msg)
+	case eventMsg:
+		switch msg.Type {
+		case event.EventCreated:
+			m.list.InsertItem(0, item{n: *msg.Notification})
+		case event.EventDeleted:
+			for i, it := range m.list.Items() {
+				if it.(item).n.ID == msg.ID {
+					m.list.RemoveItem(i)
+					break
+				}
+			}
+		case event.EventMarkedRead:
+			for i, it := range m.list.Items() {
+				if it.(item).n.ID == msg.ID {
+					n := it.(item).n
+					n.Read = true
+					m.list.SetItem(i, item{n: n})
+					break
+				}
+			}
+		}
+	case errMsg:
+		m.err = msg.err
+	case tea.WindowSizeMsg:
+		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+		m.list.SetSize(msg.Width-h-40, msg.Height-v)
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+
+	if i, ok := m.list.SelectedItem().(item); ok {
+		m.lastSelected = &i.n
+	}
+
+	return m, cmd
+}
+
+func (m modelTUI) View() string {
+	if m.err != nil {
+		return fmt.Sprintf("Error: %v", m.err)
+	}
+
+	listSide := lipgloss.NewStyle().Margin(1, 2).Render(m.list.View())
+
+	var detailView string
+	if m.lastSelected != nil {
+		pStyle := priorityInfo
+		switch m.lastSelected.Priority {
+		case "success":
+			pStyle = prioritySuccess
+		case "warning":
+			pStyle = priorityWarning
+		case "critical":
+			pStyle = priorityCritical
+		}
+
+		status := "Unread"
+		if m.lastSelected.Read {
+			status = "Read"
+		}
+
+		detailView = detailStyle.Width(35).Render(
+			lipgloss.JoinVertical(lipgloss.Left,
+				titleStyle.Render(m.lastSelected.Title),
+				"",
+				pStyle.Bold(true).Render(strings.ToUpper(m.lastSelected.Priority)),
+				lipgloss.NewStyle().Italic(true).Render("Source: "+m.lastSelected.Source),
+				fmt.Sprintf("Status: %s", status),
+				fmt.Sprintf("Time: %s", m.lastSelected.Timestamp.Local().Format("15:04:05")),
+				"",
+				m.lastSelected.Message,
+			),
+		)
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, listSide, detailView)
+}
+
+func (m modelTUI) markRead(id string) {
+	socketCall(m.socketPath, map[string]interface{}{
+		"method": "mark_read",
+		"params": map[string]interface{}{"id": id},
+	})
+}
+
+func (m modelTUI) deleteNotification(id string) {
+	socketCall(m.socketPath, map[string]interface{}{
+		"method": "delete",
+		"params": map[string]interface{}{"id": id},
+	})
+}
+
+// --- helpers ---
+
 func socketCall(path string, req interface{}) (map[string]interface{}, error) {
 	conn, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
@@ -363,7 +609,7 @@ func socketCall(path string, req interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("write: %w", err)
 	}
 
-	buf := make([]byte, 256*1024)
+	buf := make([]byte, 64*1024)
 	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
@@ -371,16 +617,15 @@ func socketCall(path string, req interface{}) (map[string]interface{}, error) {
 
 	var resp map[string]interface{}
 	if err := json.Unmarshal(buf[:n], &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
+		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
+
 	return resp, nil
 }
 
 func getError(resp map[string]interface{}) string {
-	if e, ok := resp["error"]; ok && e != nil {
-		if s, ok := e.(string); ok && s != "" {
-			return s
-		}
+	if errMsg, ok := resp["error"].(string); ok && errMsg != "" {
+		return errMsg
 	}
 	return ""
 }
