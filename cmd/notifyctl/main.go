@@ -7,8 +7,10 @@ import (
 	"net"
 	"os"
 	"time"
-)
 
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
+	)
 var (
 	version = "dev"
 	commit  = "none"
