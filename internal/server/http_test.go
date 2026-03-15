@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/iSundram/notify/internal/event"
 	"github.com/iSundram/notify/internal/store"
 )
 
@@ -30,7 +31,7 @@ func testStore(t *testing.T) *store.SQLiteStore {
 
 func TestHTTPCreateAndList(t *testing.T) {
 	st := testStore(t)
-	srv := NewHTTPServer(st)
+	srv := NewHTTPServer(st, event.NewBus())
 
 	// Create a notification.
 	body := `{"title":"Backup","message":"Backup completed","priority":"info","source":"backup","tags":["daily"]}`
@@ -67,7 +68,7 @@ func TestHTTPCreateAndList(t *testing.T) {
 
 func TestHTTPCount(t *testing.T) {
 	st := testStore(t)
-	srv := NewHTTPServer(st)
+	srv := NewHTTPServer(st, event.NewBus())
 
 	// Initially 0 unread.
 	req := httptest.NewRequest("GET", "/notifications/count?status=unread", nil)
@@ -87,7 +88,7 @@ func TestHTTPCount(t *testing.T) {
 
 func TestHTTPMarkReadUnread(t *testing.T) {
 	st := testStore(t)
-	srv := NewHTTPServer(st)
+	srv := NewHTTPServer(st, event.NewBus())
 
 	// Create a notification.
 	body := `{"title":"Test","message":"msg","priority":"info"}`
@@ -137,7 +138,7 @@ func TestHTTPMarkReadUnread(t *testing.T) {
 
 func TestHTTPDelete(t *testing.T) {
 	st := testStore(t)
-	srv := NewHTTPServer(st)
+	srv := NewHTTPServer(st, event.NewBus())
 
 	// Create a notification.
 	body := `{"title":"ToDelete","message":"msg","priority":"info"}`
@@ -167,7 +168,7 @@ func TestHTTPDelete(t *testing.T) {
 
 func TestHTTPValidation(t *testing.T) {
 	st := testStore(t)
-	srv := NewHTTPServer(st)
+	srv := NewHTTPServer(st, event.NewBus())
 
 	tests := []struct {
 		name string

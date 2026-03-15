@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -23,18 +25,102 @@ var (
 	commit  = "none"
 	date    = "unknown"
 
-	titleStyle        = lipgloss.NewStyle().MarginLeft(2).Bold(true).Foreground(lipgloss.Color("170"))
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
-	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
-	detailStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).MarginLeft(2)
+	// Colors
+	purple = lipgloss.Color("170")
+	blue   = lipgloss.Color("39")
+	green  = lipgloss.Color("76")
+	amber  = lipgloss.Color("214")
+	red    = lipgloss.Color("196")
+	gray   = lipgloss.Color("240")
 
-	priorityInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // Blue
-	prioritySuccess  = lipgloss.NewStyle().Foreground(lipgloss.Color("76"))  // Green
-	priorityWarning  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Amber
-	priorityCritical = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
+	// Styles
+	headerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("230")).
+			Background(purple).
+			Padding(0, 1).
+			Bold(true)
+
+	statusStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("230")).
+			Background(gray).
+			Padding(0, 1).
+			MarginLeft(1)
+
+	docStyle = lipgloss.NewStyle().Margin(1, 2)
+
+	listStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(purple).
+			Padding(1)
+
+	detailStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(purple).
+			Padding(1, 2).
+			MarginLeft(1)
+
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(purple)
+	
+	priorityStyles = map[string]lipgloss.Style{
+		"info":     lipgloss.NewStyle().Foreground(blue),
+		"success":  lipgloss.NewStyle().Foreground(green),
+		"warning":  lipgloss.NewStyle().Foreground(amber),
+		"critical": lipgloss.NewStyle().Foreground(red).Bold(true),
+	}
 )
+
+// Keymap for custom actions
+type keyMap struct {
+	Up          key.Binding
+	Down        key.Binding
+	MarkRead    key.Binding
+	MarkAllRead key.Binding
+	Delete      key.Binding
+	Filter      key.Binding
+	Quit        key.Binding
+}
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.MarkRead, k.MarkAllRead, k.Delete, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down},
+		{k.MarkRead, k.MarkAllRead},
+		{k.Filter, k.Quit},
+	}
+}
+
+var keys = keyMap{
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "down"),
+	),
+	MarkRead: key.NewBinding(
+		key.WithKeys("r", " "),
+		key.WithHelp("r/space", "read"),
+	),
+	MarkAllRead: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("A", "all read"),
+	),
+	Delete: key.NewBinding(
+		key.WithKeys("x", "delete"),
+		key.WithHelp("x", "delete"),
+	),
+	Filter: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "filter"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -350,10 +436,14 @@ func cmdDashboard(args []string) {
 
 	l := list.New([]list.Item{}, itemDelegate{}, 0, 0)
 	l.Title = "Notifications"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = headerStyle
 
 	m := modelTUI{
 		list:       l,
 		socketPath: *socketPath,
+		help:       help.New(),
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -370,7 +460,7 @@ type item struct {
 
 func (i item) Title() string       { return i.n.Title }
 func (i item) Description() string { return i.n.Message }
-func (i item) FilterValue() string { return i.n.Title + " " + i.n.Source }
+func (i item) FilterValue() string { return i.n.Title + " " + i.n.Source + " " + i.n.Message }
 
 type itemDelegate struct{}
 
@@ -383,30 +473,36 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	fn := itemStyle.Render
+	fn := lipgloss.NewStyle().PaddingLeft(4).Render
 	if index == m.Index() {
 		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+			return lipgloss.NewStyle().
+				PaddingLeft(2).
+				Foreground(purple).
+				Render("> " + strings.Join(s, " "))
 		}
 	}
 
 	pSym := "●"
-	pStyle := priorityInfo
-	switch i.n.Priority {
-	case "success":
-		pStyle = prioritySuccess
-	case "warning":
-		pStyle = priorityWarning
-	case "critical":
-		pStyle = priorityCritical
+	pStyle, ok := priorityStyles[i.n.Priority]
+	if !ok {
+		pStyle = priorityStyles["info"]
 	}
 
 	readSym := " "
+	title := i.n.Title
 	if !i.n.Read {
-		readSym = "*"
+		readSym = "•"
+		title = lipgloss.NewStyle().Bold(true).Render(title)
+	} else {
+		title = lipgloss.NewStyle().Foreground(gray).Render(title)
 	}
 
-	fmt.Fprint(w, fn(fmt.Sprintf("%s %s %-30s [%s]", readSym, pStyle.Render(pSym), truncate(i.n.Title, 30), i.n.Source)))
+	fmt.Fprint(w, fn(fmt.Sprintf("%s %s %-35s %s", 
+		readSym, 
+		pStyle.Render(pSym), 
+		truncate(title, 35), 
+		lipgloss.NewStyle().Foreground(gray).Render(i.n.Source))))
 }
 
 type modelTUI struct {
@@ -414,6 +510,10 @@ type modelTUI struct {
 	socketPath   string
 	err          error
 	lastSelected *model.Notification
+	width        int
+	height       int
+	help         help.Model
+	ready        bool
 }
 
 type eventMsg event.Event
@@ -427,7 +527,7 @@ func watchEvents(socketPath string, p *tea.Program) {
 	for {
 		conn, err := net.Dial("unix", socketPath)
 		if err != nil {
-			time.Sleep(time.Second)
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
@@ -436,8 +536,7 @@ func watchEvents(socketPath string, p *tea.Program) {
 		conn.Write([]byte("\n"))
 
 		scanner := bufio.NewScanner(conn)
-		// Skip "watching" response
-		scanner.Scan()
+		scanner.Scan() // Skip "watching" response
 
 		for scanner.Scan() {
 			var resp struct {
@@ -457,7 +556,7 @@ func (m modelTUI) fetchInitial() tea.Cmd {
 	return func() tea.Msg {
 		resp, err := socketCall(m.socketPath, map[string]interface{}{
 			"method": "list",
-			"params": map[string]interface{}{"limit": 50},
+			"params": map[string]interface{}{"limit": 100},
 		})
 		if err != nil {
 			return errMsg{err}
@@ -479,22 +578,36 @@ func (m modelTUI) fetchInitial() tea.Cmd {
 type initialItemsMsg []list.Item
 
 func (m modelTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "r":
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
+
+		switch {
+		case key.Matches(msg, keys.MarkRead):
 			if i, ok := m.list.SelectedItem().(item); ok {
-				go m.markRead(i.n.ID)
+				if i.n.Read {
+					go m.markUnread(i.n.ID)
+				} else {
+					go m.markRead(i.n.ID)
+				}
 			}
-		case "d":
+		case key.Matches(msg, keys.MarkAllRead):
+			go m.markAllRead()
+		case key.Matches(msg, keys.Delete):
 			if i, ok := m.list.SelectedItem().(item); ok {
 				go m.deleteNotification(i.n.ID)
 			}
+		case msg.String() == "q" || msg.String() == "ctrl+c":
+			return m, tea.Quit
 		}
+
 	case initialItemsMsg:
 		m.list.SetItems(msg)
+
 	case eventMsg:
 		switch msg.Type {
 		case event.EventCreated:
@@ -506,78 +619,153 @@ func (m modelTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-		case event.EventMarkedRead:
+		case event.EventMarkedRead, event.EventMarkedUnread:
 			for i, it := range m.list.Items() {
 				if it.(item).n.ID == msg.ID {
 					n := it.(item).n
-					n.Read = true
+					n.Read = (msg.Type == event.EventMarkedRead)
 					m.list.SetItem(i, item{n: n})
+					// Update lastSelected if it's the one we just marked
+					if m.lastSelected != nil && m.lastSelected.ID == n.ID {
+						m.lastSelected = &n
+					}
 					break
 				}
 			}
+		case event.EventMarkedAllRead:
+			for i, it := range m.list.Items() {
+				n := it.(item).n
+				n.Read = true
+				m.list.SetItem(i, item{n: n})
+			}
 		}
+
 	case errMsg:
 		m.err = msg.err
+
 	case tea.WindowSizeMsg:
-		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		m.list.SetSize(msg.Width-h-40, msg.Height-v)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.ready = true
+
+		h, v := docStyle.GetFrameSize()
+		m.list.SetSize(msg.Width-h, msg.Height-v)
 	}
 
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
+	cmds = append(cmds, cmd)
 
 	if i, ok := m.list.SelectedItem().(item); ok {
 		m.lastSelected = &i.n
+	} else {
+		m.lastSelected = nil
 	}
 
-	return m, cmd
+	return m, tea.Batch(cmds...)
 }
 
 func (m modelTUI) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("Error: %v", m.err)
+		return fmt.Sprintf("\n  Error: %v\n\n  Press q to quit.", m.err)
 	}
 
-	listSide := lipgloss.NewStyle().Margin(1, 2).Render(m.list.View())
-
-	var detailView string
-	if m.lastSelected != nil {
-		pStyle := priorityInfo
-		switch m.lastSelected.Priority {
-		case "success":
-			pStyle = prioritySuccess
-		case "warning":
-			pStyle = priorityWarning
-		case "critical":
-			pStyle = priorityCritical
-		}
-
-		status := "Unread"
-		if m.lastSelected.Read {
-			status = "Read"
-		}
-
-		detailView = detailStyle.Width(35).Render(
-			lipgloss.JoinVertical(lipgloss.Left,
-				titleStyle.Render(m.lastSelected.Title),
-				"",
-				pStyle.Bold(true).Render(strings.ToUpper(m.lastSelected.Priority)),
-				lipgloss.NewStyle().Italic(true).Render("Source: "+m.lastSelected.Source),
-				fmt.Sprintf("Status: %s", status),
-				fmt.Sprintf("Time: %s", m.lastSelected.Timestamp.Local().Format("15:04:05")),
-				"",
-				m.lastSelected.Message,
-			),
-		)
+	if !m.ready {
+		return "\n  Initializing..."
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, listSide, detailView)
+	// Header
+	unreadCount := 0
+	for _, it := range m.list.Items() {
+		if !it.(item).n.Read {
+			unreadCount++
+		}
+	}
+	
+	header := headerStyle.Render(" NOTIFY ")
+	status := statusStyle.Render(fmt.Sprintf("%d Unread", unreadCount))
+	topBar := lipgloss.JoinHorizontal(lipgloss.Center, header, status)
+
+	// Two-pane Layout
+	var mainView string
+	
+	// Determine if we have enough width for two panes
+	useTwoPanes := m.width > 100
+
+	if useTwoPanes {
+		listWidth := (m.width * 6) / 10
+		detailWidth := m.width - listWidth - 10
+
+		m.list.SetSize(listWidth, m.height-10)
+		lView := listStyle.Width(listWidth).Height(m.height - 8).Render(m.list.View())
+
+		var rView string
+		if m.lastSelected != nil {
+			rView = m.renderDetailPane(detailWidth)
+		} else {
+			rView = detailStyle.Width(detailWidth).Height(m.height - 8).Render("\n  No notification selected.")
+		}
+		
+		mainView = lipgloss.JoinHorizontal(lipgloss.Top, lView, rView)
+	} else {
+		m.list.SetSize(m.width-6, m.height-8)
+		mainView = listStyle.Width(m.width - 4).Height(m.height - 6).Render(m.list.View())
+	}
+
+	// Footer
+	helpView := m.help.View(keys)
+	footer := lipgloss.NewStyle().MarginTop(1).Render(helpView)
+
+	return docStyle.Render(lipgloss.JoinVertical(lipgloss.Left, topBar, mainView, footer))
+}
+
+func (m modelTUI) renderDetailPane(width int) string {
+	n := m.lastSelected
+	
+	pStyle := priorityStyles[n.Priority]
+	
+	title := titleStyle.Render(n.Title)
+	meta := fmt.Sprintf("%s • %s", 
+		pStyle.Bold(true).Render(strings.ToUpper(n.Priority)),
+		lipgloss.NewStyle().Foreground(gray).Render(n.Timestamp.Local().Format("Jan 02, 15:04:05")),
+	)
+	
+	source := lipgloss.NewStyle().Italic(true).Foreground(gray).Render("Source: " + n.Source)
+	
+	body := lipgloss.NewStyle().
+		Width(width - 4).
+		MarginTop(1).
+		Render(n.Message)
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		meta,
+		source,
+		"",
+		body,
+	)
+
+	return detailStyle.Width(width).Height(m.height - 8).Render(content)
 }
 
 func (m modelTUI) markRead(id string) {
 	socketCall(m.socketPath, map[string]interface{}{
 		"method": "mark_read",
+		"params": map[string]interface{}{"id": id, "read_by": "dashboard"},
+	})
+}
+
+func (m modelTUI) markUnread(id string) {
+	socketCall(m.socketPath, map[string]interface{}{
+		"method": "mark_unread",
 		"params": map[string]interface{}{"id": id},
+	})
+}
+
+func (m modelTUI) markAllRead() {
+	socketCall(m.socketPath, map[string]interface{}{
+		"method": "mark_all_read",
+		"params": map[string]interface{}{"read_by": "dashboard"},
 	})
 }
 
